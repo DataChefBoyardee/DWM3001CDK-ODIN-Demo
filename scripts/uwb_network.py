@@ -85,13 +85,13 @@ def create_log_dir(log_path: Path) -> Path:
     Final path of log file(s)
     """
     if log_path.exists():
-        cmd(f"mkdir -p {log_path}/main_node_run_{current_datetime}.txt")
-        log_path = log_path / f"main_node_run_{current_datetime}.txt"
+        cmd(f"mkdir -p {log_path}/uwb_network_logs")
+        log_path = log_path / f"/uwb_network_logs/network_node_run_{current_datetime}.txt"
     else:
         cmd(f"mkdir -p {log_path}")
         if log_path.exists():
-            cmd(f"mkdir -p {log_path}/main_node_run_{current_datetime}.txt")
-            log_path = log_path / f"main_node_run_{current_datetime}.txt"
+            cmd(f"mkdir -p {log_path}/uwb_network_logs")
+            log_path = log_path / f"/uwb_network_logs/network_node_run_{current_datetime}.txt"
         else:
             print("Failed to create log folder! Exiting...")
             exit(1)
