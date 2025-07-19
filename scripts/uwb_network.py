@@ -86,12 +86,12 @@ def create_log_dir(log_path: Path) -> Path:
     """
     if log_path.exists():
         cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
-        log_path = log_path / f"/uwb_network_logs/network_node_run_{current_datetime}.txt"
+        log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}.txt"
     else:
         cmd(["mkdir", "-p", f"{log_path}"])
         if log_path.exists():
             cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
-            log_path = log_path / f"/uwb_network_logs/network_node_run_{current_datetime}.txt"
+            log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}.txt"
         else:
             print("Failed to create log folder! Exiting...")
             exit(1)
@@ -109,10 +109,9 @@ def log_to_file(message: str, log_path: Path, debug: bool):
     RETURNS:
     Nothing.
     """
-    mode = 'a' if log_path.exists() else 'w'
     if debug:
         print(message)
-    with open(log_path, mode) as a_file:
+    with open(log_path, "a+") as a_file:
         a_file.write(f"{message}\n")
 
 def communicate_to_edge_node(node_id: str, message: str) -> str:
@@ -138,7 +137,7 @@ def retrieve_uwb_serial_interface() -> str:
     Serial interface of the uwb kit.
     """
     serial_interface = cmd(["sudo", "./get_qorvo_usb_interface.sh"])
-    return serial_interface
+    return serial_interface.strip("\n")
 
 def connect_to_node(node_id: str, log_path: Path):
     """
