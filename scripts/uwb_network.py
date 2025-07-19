@@ -193,7 +193,7 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Option to give more debug messages to the console.")
     parser.add_argument("-u", "--usb", help="Option to manually designate a serial device.")
     parser.add_argument("-d", "--dir", help="Option to choose log file location. Defaults to /tmp.")
-    parser.add_argument("-n", "--nodetype", required=True, choice= ("edge", "main"), help="Determines which node type is being run. Defaults to edge node.")
+    parser.add_argument("-n", "--nodetype", required=True, choices= ("edge", "main"), help="Determines which node type is being run. Defaults to edge node.")
     args = parser.parse_args()
 
     if args.nodetype:
