@@ -157,10 +157,11 @@ def send_serial_command(interface: str, cmd_str: str):
     RETURNS:
     Response from UWB kit.
     """
+    msg = str.encode(f"{cmd_str}\r\n")
     with serial.Serial(port=interface, baudrate=115200, write_timeout=5) as serial_object:
-        serial_object.write(f"{cmd_str}\r\n")
-        serial_object.close()
+        serial_object.write(msg)
         ret_val = serial_object.readline()
+        serial_object.close()
 
     return ret_val    
 
