@@ -109,9 +109,10 @@ def log_to_file(message: str, log_path: Path, debug: bool):
     RETURNS:
     Nothing.
     """
+    mode = 'a' if log_path.exists() else 'w'
     if debug:
         print(message)
-    with open(log_path, "a") as a_file:
+    with open(log_path, mode) as a_file:
         a_file.write(f"{message}\n")
 
 def communicate_to_edge_node(node_id: str, message: str) -> str:
