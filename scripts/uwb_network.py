@@ -42,7 +42,7 @@ def cmd(cmd_list: list, timeout: int = 5) -> str:
     RETURNS:
     String containing output of cmd run
     """
-    return subprocess.check_output(cmd_list, stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=timeout).decode("utf-8")
+    return subprocess.check_output(cmd_list, stderr=subprocess.PIPE, timeout=timeout).decode("utf-8")
 
 def spawn_background_process(cmd_list: list):
     """
