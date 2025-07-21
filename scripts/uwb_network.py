@@ -1,21 +1,36 @@
 # Script to act as main node of network.
 
-# Various imports
+# Important imports
 import threading
 import json
+import socket
+import time
 import subprocess
 import socket
 import serial
 import sys
-import os
 import traceback
-import shutil
 import argparse
+from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Union
 
+thread_status = Enum('Thread_Status', 'Not_Run Success Error Exception Undefined')
+
+# Globals to be used throughout the script.
 current_datetime = datetime.today().strftime("%Y%m%d_%H%M%S")
+exit_script = False
+serial_lock = threading.Condition()
+log_file_write_lock = threading.Condition()
+results_list = []
+node_distances = []
+node_ips = []
+
+@dataclass
+class Thread_Pair:
+    threads: tuple
 
 @dataclass
 class Data:
@@ -86,12 +101,12 @@ def create_log_dir(log_path: Path) -> Path:
     """
     if log_path.exists():
         cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
-        log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}.txt"
+        log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"
     else:
         cmd(["mkdir", "-p", f"{log_path}"])
         if log_path.exists():
             cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
-            log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}.txt"
+            log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"
         else:
             print("Failed to create log folder! Exiting...")
             exit(1)
@@ -114,17 +129,21 @@ def log_to_file(message: str, log_path: Path, debug: bool):
     with open(log_path, "a+") as a_file:
         a_file.write(f"{message}\n")
 
-def communicate_to_edge_node(node_id: str, message: str) -> str:
+def connect_to_edge_node(node_ip: str, index: int) -> str:
     """
-    Sends a message or command to an edge node.
+    Establishes a connection to an edge node and sends distance data to it.
     
     ARGUMENT(S):
-    node_id - id of node on the network.
-    message - message to send over available network interface.
+    node_ip - ip of node on the network.
+    index - index of thread results to pull from.
     
     RETURNS:
     Response from node.
     """
+    send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    send_socket.bind(node_ip, 5000)
+
+
 
 def retrieve_uwb_serial_interface() -> str:
     """
@@ -139,14 +158,47 @@ def retrieve_uwb_serial_interface() -> str:
     serial_interface = cmd(["sudo", "./get_qorvo_usb_interface.sh"])
     return serial_interface.strip("\n")
 
-def connect_to_node(node_id: str, log_path: Path):
+def listen_for_nodes(log_file: Path):
     """
-    Opens an active connection to a node in the network.
-    
+    Listens on a predefined port for open node connections.
     """
+    global node_ips
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind('',5000)
+    server_socket.listen(5)
 
+    while True:
+        if exit_script:
+            break
+        if not is_socket_closed(server_socket, log_file):
+            client,addr = server_socket.accept()
+            log_file_write_lock.acquire()
+            log_to_file(f"Received IP {addr}", log_file, False)
+            log_file_write_lock.notify()
+            log_file_write_lock.release()
+            node_ips.append(addr)
+            client.send(b'Received')
+            client.close()
 
-def send_serial_command(interface: str, cmd_str: str): 
+def is_socket_closed(sock: socket.socket, log_file: Path) -> bool:
+    try:
+        # this will try to read bytes without blocking and also without removing them from buffer (peek only)
+        data = sock.recv(16, socket.MSG_DONTWAIT | socket.MSG_PEEK)
+        if len(data) == 0:
+            return True
+    except BlockingIOError:
+        return False  # socket is open and reading from it would block
+    except ConnectionResetError:
+        return True  # socket was closed for some other reason
+    except Exception as e:
+        log_file_write_lock.acquire()
+        log_to_file("unexpected exception when checking if a socket is closed", log_file, False)
+        log_file_write_lock.notify()
+        log_file_write_lock.release()
+        return False
+    return False
+
+def send_serial_command(interface: str, cmd_str: str, log_file: Path): 
     """
     Sends a command to the UWB kit.
     
@@ -161,25 +213,141 @@ def send_serial_command(interface: str, cmd_str: str):
     with serial.Serial(port=interface, baudrate=115200, write_timeout=5) as serial_object:
         serial_object.write(msg)
         ret_val = serial_object.readline()
-        serial_object.close()
+        log_to_file(f"Serial response: {ret_val}", log_file, True)
 
     return ret_val    
 
-def read_serial_output(interface: str) -> str:
+def listen_serial_output(interface: str, log_file: str) -> str:
     """
-    Reads a line from the serial interface of the UWB kit.
+    Listens to serial output and updates variable with measurements.
     
     ARGUMENT(S):
     interface - usb serial interface
     
     RETURNS:
-    Line read from interface.
+    Nothing.
+    """
+    global exit_script
+    while True:
+        if exit_script:
+            break
+        with serial.Serial(interface, baudrate=115200, timeout=5) as serial_obj:
+            line = serial_obj.readline()
+            log_to_file(line, log_file, False)
+            line = json.loads(line)
+
+
+def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
+    """
+    Starts this node of the network.
+    
+    ARGUMENT(S):
+    interface - serial interface of UWB kit.
+    node_type - type of node being started.
+    log_path - path to log file.
+    
+    RETURNS:
+    Results list pulled from node threads.
     """
 
-    with serial.Serial(interface, baudrate=115200, timeout=5) as serial_obj:
-        ret_val = serial_obj.readline()
+    # Start the node based on node_type passed in.
+    if node_type =="edge":
+        log_to_file("Starting edge node UWB ranging.", log_file, True)
+        log_to_file("Sending command: respf", log_file, verbose)
+        send_serial_command(interface, "respf")
+        results = edge_node_thread(interface, log_file)
+    else:
+        log_to_file("Starting edge node UWB ranging.", log_file, True)
+        log_to_file("Sending command: initf", log_file, verbose)
+        send_serial_command(interface, "initf")
+        results = main_node_thread(interface, log_file)
 
-    return ret_val
+def main_node_thread(interface: str, log_file: Path) -> list:
+    """
+    Main node thread logic
+    
+    ARGUMENT(S):
+    interface - serial interface of UWB kit.
+    log_file - log file where output is kept.
+    edge_nodes - number of edge nodes connected.
+    
+    RETURNS:
+    List of general results from threads.
+    """
+    global results_list
+    main_log = log_file / f"main_node_run_{current_datetime}.txt"
+    serial_output_log = log_file / f"uwb_serial_output_{current_datetime}.txt"
+    distances_log = log_file / f"module_distances_{current_datetime}.txt"
+    node_ip_cur_len = 0
+
+    # Start UWB kit listener.
+    serial_thread = threading.Thread(target=listen_serial_output, args=[interface,serial_output_log,])
+
+    # Spend some time initially listening for active node connections.
+    log_to_file("Listening for active node connections.", main_log, True)
+    listening_thread = threading.Thread(target=listen_for_nodes, args=[main_log,])
+    time.sleep(5)
+    
+    # Prepare threads.
+    node_ip_cur_len = len(node_ips)
+    threads = [None] * node_ip_cur_len
+    results_list = [thread_status.Not_Run] * node_ip_cur_len
+    node_distances = [None] * node_ip_cur_len
+    for i in range(len(threads)):
+        threads[i] = threading.Thread(target=connect_to_edge_node, args=[node_ips[i],i])
+
+    # Start thread to listen for user input to quit script.
+    user_input_thread = threading.Thread(target=listen_for_user_input)
+
+    # Output updating distances, and add new nodes as they connect.
+    while not exit_script:
+        if node_ip_cur_len < len(node_ips):
+            for i in range(node_ip_cur_len, len(node_ips)):
+                results_list.append(thread_status.Not_Run)
+                threads.append(threading.Thread(target=connect_to_edge_node, args=[node_ips[i],i]))
+            node_ip_cur_len = len(node_ips)
+        for i in range(len(node_distances)):
+            log_to_file(f"Node {i}: {node_distances[i]}"), distances_log, True
+        log_to_file("\n", distances_log, False)
+        print("Press \"q\" to quit.")
+        sys.stdout.flush()
+
+
+    user_input_thread.join()
+    listening_thread.join()
+    serial_thread.join()
+    for i in range(len(threads)):
+        threads[i].join()
+
+def listen_for_user_input():
+    """
+    Simple method for listening for user input in the background. Meant to be threaded.
+    """
+    global exit_script
+    while True:
+        user_input = input()
+        if user_input == "q":
+            exit_script = True
+            break
+
+def edge_node_thread(interface: str, log_file: Path):
+    """
+    Edge node thread logic
+    
+    ARGUMENT(S):
+    interface - serial interface of UWB kit.
+    log_file - log file where output is kept.
+    
+    RETURNS:
+    Nothing.
+    """
+    global results_list
+    pair = Thread_Pair((threading.Thread()))
+
+def get_uwb_kit_info(log_file: Path):
+    """
+    Grabs version info from UWB kit.
+    """
 
 def main():
     """
@@ -189,6 +357,7 @@ def main():
     serial_interface = ""
     node_type = "edge"
     global verbose
+    global results_list
 
     parser = argparse.ArgumentParser(description="Main node of UWB network.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Option to give more debug messages to the console.")
@@ -209,16 +378,10 @@ def main():
         log_path = create_log_dir(Path(args.dir))
     else:
         log_path = create_log_dir(log_path)
-    
+
     # Start the UWB kit as an initiator or responder if a main node or edge node.
-    if node_type =="edge":
-        log_to_file("Starting edge node UWB ranging.", log_path, True)
-        log_to_file("Sending command: respf", log_path, verbose)
-        send_serial_command(serial_interface, "respf")
-    else:
-        log_to_file("Starting edge node UWB ranging.", log_path, True)
-        log_to_file("Sending command: initf", log_path, verbose)
-        send_serial_command(serial_interface, "initf")
+    start_uwb_node(serial_interface, node_type, log_path)
+
 
 if __name__ == "__main__":
     main()
