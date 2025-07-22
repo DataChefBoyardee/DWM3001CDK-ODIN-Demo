@@ -256,12 +256,12 @@ def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
     if node_type =="edge":
         log_to_file("Starting edge node UWB ranging.", log_file, True)
         log_to_file("Sending command: respf", log_file, verbose)
-        send_serial_command(interface, "respf")
+        send_serial_command(interface, "respf", log_file)
         edge_node_thread(interface, log_file)
     else:
         log_to_file("Starting edge node UWB ranging.", log_file, True)
         log_to_file("Sending command: initf", log_file, verbose)
-        send_serial_command(interface, "initf")
+        send_serial_command(interface, "initf", log_file)
         main_node_thread(interface, log_file)
 
 def main_node_thread(interface: str, log_file: Path) -> list:
