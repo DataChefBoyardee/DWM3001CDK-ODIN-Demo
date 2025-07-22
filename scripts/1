@@ -173,6 +173,7 @@ def listen_for_nodes(log_file: Path):
     server_socket.listen(5)
 
     while not exit_script:
+        print("Spinning...")
         if is_socket_closed(server_socket, log_file):
             client,addr = server_socket.accept()
             log_file_write_lock.acquire()
@@ -214,9 +215,6 @@ def send_serial_command(interface: str, cmd_str: str, log_file: Path):
     """
     msg = str.encode(f"{cmd_str}\r\n")
     with serial.Serial(port=interface, baudrate=115200, write_timeout=5) as serial_object:
-        serial_object.flushInput()
-        serial_object.flushOutput()
-        time.sleep(1)
         serial_object.write(msg)
         ret_val = serial_object.readline().decode("utf-8")
         log_to_file(f"Serial response: {ret_val}", log_file, True)
@@ -237,11 +235,8 @@ def listen_serial_output(interface: str, log_file: str) -> str:
     global exit_script
     while not exit_script:
         with serial.Serial(interface, baudrate=115200, timeout=0.25) as serial_obj:
-            serial_obj.flushInput()
-            serial_obj.flushOutput()
-            time.sleep(0.5)
             line = serial_obj.readline().decode("utf-8")
-            log_to_file(line, log_file, True)
+            log_to_file(line, log_file, False)
 #            line = json.loads(line)
 #            log_to_file(line, log_file, True)
             serial_obj.close()
