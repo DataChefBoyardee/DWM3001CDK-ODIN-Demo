@@ -288,10 +288,12 @@ def main_node_thread(interface: str, log_file: Path) -> list:
 
     # Start UWB kit listener.
     serial_thread = threading.Thread(target=listen_serial_output, args=[interface,serial_output_log,])
+    serial_thread.start()
 
     # Spend some time initially listening for active node connections.
     log_to_file("Listening for active node connections.", main_log, True)
     listening_thread = threading.Thread(target=listen_for_nodes, args=[main_log,])
+    listening_thread.start()
     time.sleep(5)
     
     # Prepare threads.
@@ -301,9 +303,11 @@ def main_node_thread(interface: str, log_file: Path) -> list:
     node_distances = [None] * node_ip_cur_len
     for i in range(len(threads)):
         threads[i] = threading.Thread(target=connect_to_edge_node, args=[node_ips[i],i])
+        threads[i].start()
 
     # Start thread to listen for user input to quit script.
     user_input_thread = threading.Thread(target=listen_for_user_input)
+    user_input_thread.start()
 
     # Output updating distances, and add new nodes as they connect.
     while not exit_script:
@@ -311,6 +315,7 @@ def main_node_thread(interface: str, log_file: Path) -> list:
             for i in range(node_ip_cur_len, len(node_ips)):
                 results_list.append(thread_status.Not_Run)
                 threads.append(threading.Thread(target=connect_to_edge_node, args=[node_ips[i],i]))
+                threads[i].start()
             node_ip_cur_len = len(node_ips)
         for i in range(len(node_distances)):
             log_to_file(f"Node {i}: {node_distances[i]}"), distances_log, True
