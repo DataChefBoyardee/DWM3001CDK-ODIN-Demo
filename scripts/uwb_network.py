@@ -252,16 +252,17 @@ def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
     Results list pulled from node threads.
     """
     serial_output_log = log_file / f"uwb_serial_output_{current_datetime}.txt"
+    main_log = log_file / f"main_node_run_{current_datetime}.txt"
 
     # Start the node based on node_type passed in.
     if node_type =="edge":
-        log_to_file("Starting edge node UWB ranging.", log_file, True)
-        log_to_file("Sending command: respf", log_file, verbose)
+        log_to_file("Starting edge node UWB ranging.", main_log, True)
+        log_to_file("Sending command: respf", serial_output_log, verbose)
         send_serial_command(interface, "respf", serial_output_log)
         edge_node_thread(interface, log_file)
     else:
-        log_to_file("Starting edge node UWB ranging.", log_file, True)
-        log_to_file("Sending command: initf", log_file, verbose)
+        log_to_file("Starting edge node UWB ranging.", main_log, True)
+        log_to_file("Sending command: initf", serial_output_log, verbose)
         send_serial_command(interface, "initf", serial_output_log)
         main_node_thread(interface, log_file)
 
