@@ -102,11 +102,13 @@ def create_log_dir(log_path: Path) -> Path:
     """
     if log_path.exists():
         cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
+        cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"])
         log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"
     else:
         cmd(["mkdir", "-p", f"{log_path}"])
         if log_path.exists():
             cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs"])
+            cmd(["mkdir", "-p", f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"])
             log_path = log_path / f"{log_path}/uwb_network_logs/network_node_run_{current_datetime}"
         else:
             print("Failed to create log folder! Exiting...")
