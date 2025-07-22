@@ -26,6 +26,7 @@ serial_lock = threading.Condition()
 log_file_write_lock = threading.Condition()
 results_list = []
 node_distances = []
+node_corrected_distances = []
 node_ips = []
 
 @dataclass
@@ -141,7 +142,8 @@ def connect_to_edge_node(node_ip: str, index: int) -> str:
     Response from node.
     """
     send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    send_socket.bind(node_ip, 5000)
+    send_socket.bind(node_ip, 5001)
+
 
 
 
@@ -235,7 +237,7 @@ def listen_serial_output(interface: str, log_file: str) -> str:
             line = serial_obj.readline()
             log_to_file(line, log_file, False)
             line = json.loads(line)
-
+            log_to_file(line, log_file, True)
 
 def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
     """
@@ -255,12 +257,12 @@ def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
         log_to_file("Starting edge node UWB ranging.", log_file, True)
         log_to_file("Sending command: respf", log_file, verbose)
         send_serial_command(interface, "respf")
-        results = edge_node_thread(interface, log_file)
+        edge_node_thread(interface, log_file)
     else:
         log_to_file("Starting edge node UWB ranging.", log_file, True)
         log_to_file("Sending command: initf", log_file, verbose)
         send_serial_command(interface, "initf")
-        results = main_node_thread(interface, log_file)
+        main_node_thread(interface, log_file)
 
 def main_node_thread(interface: str, log_file: Path) -> list:
     """
@@ -312,7 +314,7 @@ def main_node_thread(interface: str, log_file: Path) -> list:
         print("Press \"q\" to quit.")
         sys.stdout.flush()
 
-
+    # Join threads then exit.
     user_input_thread.join()
     listening_thread.join()
     serial_thread.join()
