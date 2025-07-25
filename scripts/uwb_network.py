@@ -239,11 +239,14 @@ def listen_serial_output(interface: str, log_file: str) -> str:
         with serial.Serial(interface, baudrate=115200, timeout=0.25) as serial_obj:
             serial_obj.flushInput()
             serial_obj.flushOutput()
-            time.sleep(0.5)
+            time.sleep(0.1)
             line = serial_obj.readline().decode("utf-8")
-            log_to_file(line, log_file, True)
-#            line = json.loads(line)
-#            log_to_file(line, log_file, True)
+            try:
+                line = json.loads(line)
+            except Exception as e:
+                continue
+            log_to_file(line['results'][0]['D_cm'], log_file, True)
+            log_to_file(line['results'][0]['Addr'], log_file, True)
             serial_obj.close()
 
 def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
