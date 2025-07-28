@@ -168,20 +168,18 @@ def listen_for_nodes(log_file: Path):
     """
     global node_ips
     global exit_script
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     server_socket.bind(('',5000))
-    server_socket.listen(5)
 
     while not exit_script:
-        if is_socket_closed(server_socket, log_file):
-            client,addr = server_socket.accept()
+        if not is_socket_closed(server_socket, log_file):
+            data, (ip, port) = server_socket.recvfrom(1024, socket.MSG_DONTWAIT)
             log_file_write_lock.acquire()
-            log_to_file(f"Received IP {addr}", log_file, False)
+            log_to_file(f"Received IP {ip}", log_file, False)
             log_file_write_lock.notify()
             log_file_write_lock.release()
-            node_ips.append(addr)
-            client.send(b'Received')
-            client.close()
+            node_ips.append(ip)
+            server_socket.sendto('Received',(ip, 5000))
 
 def is_socket_closed(sock: socket.socket, log_file: Path) -> bool:
     try:
