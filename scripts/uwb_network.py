@@ -28,6 +28,7 @@ results_list = []
 node_distances = []
 node_corrected_distances = []
 node_ips = []
+node_ips_addr = []
 
 @dataclass
 class Thread_Pair:
@@ -143,7 +144,7 @@ def connect_to_edge_node(node_ip: str, index: int) -> str:
     RETURNS:
     Response from node.
     """
-    send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    send_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
     send_socket.bind(node_ip, 5001)
     return
 
@@ -168,7 +169,9 @@ def listen_for_nodes(log_file: Path):
     """
     global node_ips
     global exit_script
+    global node_ips_addr
     server_socket = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(('',5000))
 
     while not exit_script:
@@ -178,8 +181,11 @@ def listen_for_nodes(log_file: Path):
             log_to_file(f"Received IP {ip}", log_file, False)
             log_file_write_lock.notify()
             log_file_write_lock.release()
-            node_ips.append(ip)
-            server_socket.sendto('Received',(ip, 5000))
+            if ip not in node_ips:
+                node_ips.append(ip)
+                node_ips_addr.append((ip, len(node_ips)))
+            msg = f"Received. Addr:{len(node_ips)}"
+            server_socket.sendto(msg,(ip, 5001))
 
 def is_socket_closed(sock: socket.socket, log_file: Path) -> bool:
     try:
@@ -264,14 +270,8 @@ def start_uwb_node(interface: str, node_type: str, log_file: Path) -> list:
 
     # Start the node based on node_type passed in.
     if node_type =="edge":
-        log_to_file("Starting edge node UWB ranging.", main_log, True)
-        log_to_file("Sending command: respf", serial_output_log, verbose)
-        send_serial_command(interface, "respf", serial_output_log)
         edge_node_thread(interface, log_file)
     else:
-        log_to_file("Starting edge node UWB ranging.", main_log, True)
-        log_to_file("Sending command: initf", serial_output_log, verbose)
-        send_serial_command(interface, "initf", serial_output_log)
         main_node_thread(interface, log_file)
 
 def main_node_thread(interface: str, log_file: Path) -> list:
@@ -288,23 +288,33 @@ def main_node_thread(interface: str, log_file: Path) -> list:
     """
     global results_list
     global exit_script
+    uwb_init_cmd = "initf "
     main_log = log_file / f"main_node_run_{current_datetime}.txt"
     serial_output_log = log_file / f"uwb_serial_output_{current_datetime}.txt"
     distances_log = log_file / f"module_distances_{current_datetime}.txt"
     node_ip_cur_len = 0
 
-    # Start UWB kit listener.
-    serial_thread = threading.Thread(target=listen_serial_output, args=[interface,serial_output_log,])
-    serial_thread.start()
-
     # Spend some time initially listening for active node connections.
     log_to_file("Listening for active node connections.", main_log, True)
     listening_thread = threading.Thread(target=listen_for_nodes, args=[main_log,])
     listening_thread.start()
-    time.sleep(1)
+    time.sleep(5)
     
+    # Assign addresses to ip's and start initiator.
+    log_to_file("Starting edge node UWB ranging.", main_log, True)
+    if node_ips > 1:
+        uwb_init_cmd = "initf 4 2400 200 25 2 42 01:02:03:04:05:06:07:08 1 0 0 "
+        for i in range(1, len(node_ips)):
+            uwb_init_cmd += f"{i} "
+    log_to_file(f"Sending command: {uwb_init_cmd}", serial_output_log, verbose)
+    send_serial_command(interface, f"{uwb_init_cmd}", serial_output_log)
+
+    # Start UWB kit listener.
+    serial_thread = threading.Thread(target=listen_serial_output, args=[interface,serial_output_log,])
+    serial_thread.start()
+
+    # Prepare individual connection threads.
     log_to_file("Starting distance data gathering.",main_log,True)
-    # Prepare threads.
     node_ip_cur_len = len(node_ips)
     threads = [None] * node_ip_cur_len
     results_list = [thread_status.Not_Run] * node_ip_cur_len
@@ -362,7 +372,36 @@ def edge_node_thread(interface: str, log_file: Path):
     Nothing.
     """
     global results_list
-    pair = Thread_Pair((threading.Thread()))
+    global exit_script
+    main_log = log_file / f"main_node_run_{current_datetime}.txt"
+    serial_output_log = log_file / f"uwb_serial_output_{current_datetime}.txt"
+    distances_log = log_file / f"module_distances_{current_datetime}.txt"
+
+    server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    server_socket.bind(('',5001))
+    data, (ip, port) = server_socket.recvfrom(1024)
+    str_split = str(data).split(":")
+    addr = str_split[1]
+
+    log_to_file("Starting edge node UWB ranging.", main_log, True)
+    log_to_file(f"Sending command: respf 4 2400 200 25 2 42 01:02:03:04:05:06:07:08 1 0 0 {addr}", serial_output_log, verbose)
+    send_serial_command(interface, f"respf 4 2400 200 25 2 42 01:02:03:04:05:06:07:08 1 0 0 {addr}", serial_output_log)
+    edge_node_thread(interface, log_file)
+
+    # Start UWB kit listener.
+    serial_thread = threading.Thread(target=listen_serial_output, args=[interface,serial_output_log,])
+    serial_thread.start()
+
+    # Start thread to listen for user input to quit script.
+    user_input_thread = threading.Thread(target=listen_for_user_input)
+    user_input_thread.start()
+
+    while not exit_script:
+        data, (ip, port) = server_socket.recvfrom(1024)
+        log_file_write_lock.acquire()
+        log_to_file(f"Received IP {ip}", log_file, False)
+        log_file_write_lock.notify()
+        log_file_write_lock.release()
 
 def get_uwb_kit_info(log_file: Path):
     """
